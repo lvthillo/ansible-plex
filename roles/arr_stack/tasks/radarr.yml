@@ -1,2 +1,73 @@
 ---
-# Placeholder - will be implemented in Task 11
+- name: Get Radarr API key
+  ansible.builtin.command: >
+    docker exec radarr cat /config/config.xml
+  register: radarr_config_xml
+  changed_when: false
+
+- name: Extract Radarr API key
+  ansible.builtin.set_fact:
+    radarr_api_key: "{{ radarr_config_xml.stdout | regex_search('<ApiKey>(.+?)</ApiKey>', '\\1') | first }}"
+
+- name: Check existing Radarr root folders
+  ansible.builtin.uri:
+    url: "http://localhost:7878/api/v3/rootfolder"
+    method: GET
+    headers:
+      X-Api-Key: "{{ radarr_api_key }}"
+    return_content: true
+  register: radarr_rootfolders
+
+- name: Add Radarr root folder
+  ansible.builtin.uri:
+    url: "http://localhost:7878/api/v3/rootfolder"
+    method: POST
+    headers:
+      X-Api-Key: "{{ radarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      path: /data/media/movies
+    status_code:
+      - 200
+      - 201
+  when: "'/data/media/movies' not in (radarr_rootfolders.content | default(''))"
+
+- name: Check existing Radarr download clients
+  ansible.builtin.uri:
+    url: "http://localhost:7878/api/v3/downloadclient"
+    method: GET
+    headers:
+      X-Api-Key: "{{ radarr_api_key }}"
+    return_content: true
+  register: radarr_downloadclients
+
+- name: Add qBittorrent download client to Radarr
+  ansible.builtin.uri:
+    url: "http://localhost:7878/api/v3/downloadclient"
+    method: POST
+    headers:
+      X-Api-Key: "{{ radarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      enable: true
+      protocol: torrent
+      name: qBittorrent
+      implementation: QBittorrent
+      configContract: QBittorrentSettings
+      fields:
+        - name: host
+          value: gluetun
+        - name: port
+          value: 8080
+        - name: username
+          value: admin
+        - name: password
+          value: "{{ qbt_temp_password | default('adminadmin') }}"
+        - name: movieCategory
+          value: movies
+    status_code:
+      - 200
+      - 201
+  when: "'qBittorrent' not in (radarr_downloadclients.content | default(''))"

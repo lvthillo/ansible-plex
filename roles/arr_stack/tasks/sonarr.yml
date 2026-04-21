@@ -1,2 +1,73 @@
 ---
-# Placeholder - will be implemented in Task 11
+- name: Get Sonarr API key
+  ansible.builtin.command: >
+    docker exec sonarr cat /config/config.xml
+  register: sonarr_config_xml
+  changed_when: false
+
+- name: Extract Sonarr API key
+  ansible.builtin.set_fact:
+    sonarr_api_key: "{{ sonarr_config_xml.stdout | regex_search('<ApiKey>(.+?)</ApiKey>', '\\1') | first }}"
+
+- name: Check existing Sonarr root folders
+  ansible.builtin.uri:
+    url: "http://localhost:8989/api/v3/rootfolder"
+    method: GET
+    headers:
+      X-Api-Key: "{{ sonarr_api_key }}"
+    return_content: true
+  register: sonarr_rootfolders
+
+- name: Add Sonarr root folder
+  ansible.builtin.uri:
+    url: "http://localhost:8989/api/v3/rootfolder"
+    method: POST
+    headers:
+      X-Api-Key: "{{ sonarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      path: /data/media/tv
+    status_code:
+      - 200
+      - 201
+  when: "'/data/media/tv' not in (sonarr_rootfolders.content | default(''))"
+
+- name: Check existing Sonarr download clients
+  ansible.builtin.uri:
+    url: "http://localhost:8989/api/v3/downloadclient"
+    method: GET
+    headers:
+      X-Api-Key: "{{ sonarr_api_key }}"
+    return_content: true
+  register: sonarr_downloadclients
+
+- name: Add qBittorrent download client to Sonarr
+  ansible.builtin.uri:
+    url: "http://localhost:8989/api/v3/downloadclient"
+    method: POST
+    headers:
+      X-Api-Key: "{{ sonarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      enable: true
+      protocol: torrent
+      name: qBittorrent
+      implementation: QBittorrent
+      configContract: QBittorrentSettings
+      fields:
+        - name: host
+          value: gluetun
+        - name: port
+          value: 8080
+        - name: username
+          value: admin
+        - name: password
+          value: "{{ qbt_temp_password | default('adminadmin') }}"
+        - name: tvCategory
+          value: tv
+    status_code:
+      - 200
+      - 201
+  when: "'qBittorrent' not in (sonarr_downloadclients.content | default(''))"
