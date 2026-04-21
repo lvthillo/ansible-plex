@@ -1,0 +1,36 @@
+---
+- name: Install NFS client
+  ansible.builtin.apt:
+    name: nfs-common
+    state: present
+    update_cache: true
+
+- name: Create /data mount point
+  ansible.builtin.file:
+    path: /data
+    state: directory
+    mode: "0755"
+
+- name: Mount NFS share
+  ansible.posix.mount:
+    path: /data
+    src: "{{ proxmox_host_ip }}:{{ media_mount_path }}"
+    fstype: nfs
+    opts: defaults
+    state: mounted
+
+- name: Verify media folders are accessible
+  ansible.builtin.stat:
+    path: "/data/{{ item }}"
+  loop:
+    - media/tv
+    - media/movies
+    - torrents/tv
+    - torrents/movies
+  register: nfs_verify
+
+- name: Fail if NFS mount is missing expected folders
+  ansible.builtin.fail:
+    msg: "NFS mount verification failed: /data/{{ item.item }} does not exist"
+  loop: "{{ nfs_verify.results }}"
+  when: not item.stat.exists
