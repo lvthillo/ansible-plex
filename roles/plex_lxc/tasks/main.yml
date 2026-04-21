@@ -1,0 +1,31 @@
+---
+- name: Create Plex LXC container
+  ansible.builtin.include_tasks: create.yml
+
+- name: Configure iGPU passthrough
+  ansible.builtin.include_tasks: igpu.yml
+
+- name: Configure UID/GID mapping
+  ansible.builtin.include_tasks: idmap.yml
+
+- name: Start Plex LXC container
+  community.general.proxmox:
+    vmid: "{{ plex_lxc_id }}"
+    state: started
+    api_host: "{{ proxmox_host_ip }}"
+    api_user: root@pam
+    api_token_id: "{{ proxmox_api_token_id | default(omit) }}"
+    api_token_secret: "{{ proxmox_api_token_secret | default(omit) }}"
+    api_password: "{{ proxmox_api_password | default(omit) }}"
+
+- name: Wait for LXC to be ready
+  ansible.builtin.command: pct exec {{ plex_lxc_id }} -- systemctl is-system-running --wait
+  register: lxc_ready
+  retries: 30
+  delay: 5
+  until: lxc_ready.rc == 0
+  changed_when: false
+  failed_when: false
+
+- name: Install and configure Plex
+  ansible.builtin.include_tasks: plex.yml

@@ -1,0 +1,42 @@
+---
+- name: Check if LXC template is available
+  ansible.builtin.command: pveam list {{ plex_lxc_template_storage }}
+  register: pveam_list
+  changed_when: false
+
+- name: Download LXC template
+  ansible.builtin.command: >
+    pveam download {{ plex_lxc_template_storage }} {{ plex_lxc_template }}
+  when: plex_lxc_template not in pveam_list.stdout
+  changed_when: true
+
+- name: Create Plex LXC container
+  community.general.proxmox:
+    vmid: "{{ plex_lxc_id }}"
+    hostname: "{{ plex_lxc_hostname }}"
+    ostemplate: "{{ plex_lxc_template_storage }}:vztmpl/{{ plex_lxc_template }}"
+    storage: "{{ plex_lxc_storage }}"
+    disk: "{{ plex_lxc_disk }}"
+    cores: "{{ plex_lxc_cores }}"
+    memory: "{{ plex_lxc_memory }}"
+    swap: "{{ plex_lxc_swap }}"
+    net0: "name=eth0,bridge=vmbr0,ip={{ plex_lxc_ip }}/24,gw={{ network_gateway }}"
+    features:
+      - "{{ plex_lxc_features }}"
+    onboot: true
+    unprivileged: true
+    tags: "{{ plex_lxc_tags }}"
+    timezone: "{{ arr_timezone }}"
+    state: present
+    api_host: "{{ proxmox_host_ip }}"
+    api_user: root@pam
+    api_token_id: "{{ proxmox_api_token_id | default(omit) }}"
+    api_token_secret: "{{ proxmox_api_token_secret | default(omit) }}"
+    api_password: "{{ proxmox_api_password | default(omit) }}"
+  register: lxc_created
+
+- name: Configure bind mount for media
+  ansible.builtin.command: >
+    pct set {{ plex_lxc_id }} -mp0 {{ media_mount_path }}/media,mp=/data/media
+  when: lxc_created.changed
+  changed_when: true

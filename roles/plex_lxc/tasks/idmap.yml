@@ -1,0 +1,28 @@
+---
+- name: Allow UID 1000 mapping in subuid
+  ansible.builtin.lineinfile:
+    path: /etc/subuid
+    line: "root:1000:1"
+    state: present
+
+- name: Allow GID 1000 mapping in subgid
+  ansible.builtin.lineinfile:
+    path: /etc/subgid
+    line: "root:1000:1"
+    state: present
+
+- name: Set LXC config path
+  ansible.builtin.set_fact:
+    lxc_config_path: "/etc/pve/lxc/{{ plex_lxc_id }}.conf"
+
+- name: Add UID mapping to LXC config
+  ansible.builtin.blockinfile:
+    path: "{{ lxc_config_path }}"
+    marker: "# {mark} ANSIBLE MANAGED - UID/GID MAPPING"
+    block: |
+      lxc.idmap: u 0 100000 1000
+      lxc.idmap: u 1000 1000 1
+      lxc.idmap: u 1001 101001 64535
+      lxc.idmap: g 0 100000 1000
+      lxc.idmap: g 1000 1000 1
+      lxc.idmap: g 1001 101001 64535

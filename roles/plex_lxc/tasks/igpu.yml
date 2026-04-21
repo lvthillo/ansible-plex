@@ -1,0 +1,23 @@
+---
+- name: Read current LXC config
+  ansible.builtin.slurp:
+    src: "/etc/pve/lxc/{{ plex_lxc_id }}.conf"
+  register: lxc_config_raw
+
+- name: Set LXC config path
+  ansible.builtin.set_fact:
+    lxc_config_path: "/etc/pve/lxc/{{ plex_lxc_id }}.conf"
+
+- name: Add iGPU renderD128 passthrough (dev0)
+  ansible.builtin.lineinfile:
+    path: "{{ lxc_config_path }}"
+    regexp: "^dev0:"
+    line: "dev0: /dev/dri/renderD128,gid={{ plex_lxc_igpu_render_gid }}"
+  when: "'dev0:' not in (lxc_config_raw.content | b64decode)"
+
+- name: Add iGPU card0 passthrough (dev1)
+  ansible.builtin.lineinfile:
+    path: "{{ lxc_config_path }}"
+    regexp: "^dev1:"
+    line: "dev1: /dev/dri/card0,gid={{ plex_lxc_igpu_card_gid }}"
+  when: "'dev1:' not in (lxc_config_raw.content | b64decode)"
