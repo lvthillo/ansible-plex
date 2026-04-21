@@ -1,0 +1,42 @@
+---
+- name: Create LVM thin volume '{{ lvm_volume_name }}'
+  community.general.lvol:
+    vg: "{{ lvm_vg }}"
+    lv: "{{ lvm_volume_name }}"
+    size: "{{ lvm_volume_size }}"
+    thinpool: "{{ lvm_pool }}"
+    state: present
+
+- name: Format volume as ext4
+  community.general.filesystem:
+    fstype: ext4
+    dev: "/dev/{{ lvm_vg }}/{{ lvm_volume_name }}"
+
+- name: Mount media volume
+  ansible.posix.mount:
+    path: "{{ media_mount_path }}"
+    src: "/dev/{{ lvm_vg }}/{{ lvm_volume_name }}"
+    fstype: ext4
+    opts: defaults
+    passno: "2"
+    state: mounted
+
+- name: Create media folder structure
+  ansible.builtin.file:
+    path: "{{ media_mount_path }}/{{ item }}"
+    state: directory
+    owner: "{{ arr_puid }}"
+    group: "{{ arr_pgid }}"
+    mode: "0755"
+  loop:
+    - media/tv
+    - media/movies
+    - torrents/tv
+    - torrents/movies
+
+- name: Set ownership on media mount
+  ansible.builtin.file:
+    path: "{{ media_mount_path }}"
+    owner: "{{ arr_puid }}"
+    group: "{{ arr_pgid }}"
+    recurse: true
