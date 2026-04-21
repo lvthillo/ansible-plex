@@ -9,6 +9,28 @@
   ansible.builtin.set_fact:
     sonarr_api_key: "{{ sonarr_config_xml.stdout | regex_search('<ApiKey>(.+?)</ApiKey>', '\\1') | first }}"
 
+- name: Get current Sonarr host config
+  ansible.builtin.uri:
+    url: "http://localhost:8989/api/v3/config/host"
+    method: GET
+    headers:
+      X-Api-Key: "{{ sonarr_api_key }}"
+    return_content: true
+  register: sonarr_host_config
+
+- name: Configure Sonarr authentication
+  ansible.builtin.uri:
+    url: "http://localhost:8989/api/v3/config/host"
+    method: PUT
+    headers:
+      X-Api-Key: "{{ sonarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ sonarr_host_config.json | combine({'authenticationMethod': 'forms', 'authenticationRequired': 'disabledForLocalAddresses', 'username': arr_auth_username, 'password': arr_auth_password, 'passwordConfirmation': arr_auth_password}) }}"
+    status_code:
+      - 200
+      - 202
+
 - name: Check existing Sonarr root folders
   ansible.builtin.uri:
     url: "http://localhost:8989/api/v3/rootfolder"

@@ -9,6 +9,28 @@
   ansible.builtin.set_fact:
     radarr_api_key: "{{ radarr_config_xml.stdout | regex_search('<ApiKey>(.+?)</ApiKey>', '\\1') | first }}"
 
+- name: Get current Radarr host config
+  ansible.builtin.uri:
+    url: "http://localhost:7878/api/v3/config/host"
+    method: GET
+    headers:
+      X-Api-Key: "{{ radarr_api_key }}"
+    return_content: true
+  register: radarr_host_config
+
+- name: Configure Radarr authentication
+  ansible.builtin.uri:
+    url: "http://localhost:7878/api/v3/config/host"
+    method: PUT
+    headers:
+      X-Api-Key: "{{ radarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ radarr_host_config.json | combine({'authenticationMethod': 'forms', 'authenticationRequired': 'disabledForLocalAddresses', 'username': arr_auth_username, 'password': arr_auth_password, 'passwordConfirmation': arr_auth_password}) }}"
+    status_code:
+      - 200
+      - 202
+
 - name: Check existing Radarr root folders
   ansible.builtin.uri:
     url: "http://localhost:7878/api/v3/rootfolder"
@@ -52,6 +74,7 @@
     body_format: json
     body:
       enable: true
+      priority: 1
       protocol: torrent
       name: qBittorrent
       implementation: QBittorrent

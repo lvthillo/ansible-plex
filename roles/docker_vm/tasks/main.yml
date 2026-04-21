@@ -87,6 +87,7 @@
 - name: Add Docker VM to in-memory inventory
   ansible.builtin.add_host:
     name: docker_arr
+    groups: all
     ansible_host: "{{ docker_vm_ip }}"
     ansible_user: "{{ docker_vm_user }}"
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no"

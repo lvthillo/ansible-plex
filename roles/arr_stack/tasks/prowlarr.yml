@@ -10,14 +10,35 @@
     prowlarr_api_key: "{{ prowlarr_config_xml.stdout | regex_search('<ApiKey>(.+?)</ApiKey>', '\\1') | first }}"
 
 - name: Get Docker gateway IP
-  ansible.builtin.command: >
-    docker network inspect bridge --format={{ '{{' }}range .IPAM.Config{{ '}}' }}{{ '{{' }}.Gateway{{ '}}' }}{{ '{{' }}end{{ '}}' }}
+  ansible.builtin.shell: "docker network inspect bridge --format='{%raw%}{{range .IPAM.Config}}{{.Gateway}}{{end}}{%endraw%}'"
   register: docker_gateway
   changed_when: false
 
 - name: Set Docker gateway fact
   ansible.builtin.set_fact:
     docker_gateway_ip: "{{ docker_gateway.stdout }}"
+
+- name: Get current Prowlarr host config
+  ansible.builtin.uri:
+    url: "http://localhost:9696/api/v1/config/host"
+    method: GET
+    headers:
+      X-Api-Key: "{{ prowlarr_api_key }}"
+    return_content: true
+  register: prowlarr_host_config
+
+- name: Configure Prowlarr authentication
+  ansible.builtin.uri:
+    url: "http://localhost:9696/api/v1/config/host"
+    method: PUT
+    headers:
+      X-Api-Key: "{{ prowlarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: "{{ prowlarr_host_config.json | combine({'authenticationMethod': 'forms', 'authenticationRequired': 'disabledForLocalAddresses', 'username': arr_auth_username, 'password': arr_auth_password, 'passwordConfirmation': arr_auth_password}) }}"
+    status_code:
+      - 200
+      - 202
 
 - name: Check existing Prowlarr indexer proxies
   ansible.builtin.uri:
@@ -103,9 +124,10 @@
         - name: prowlarrUrl
           value: "http://{{ docker_vm_ip }}:9696"
         - name: baseUrl
-          value: "http://{{ docker_gateway_ip }}:8989"
+          value: "http://sonarr:8989"
         - name: apiKey
           value: "{{ sonarr_api_key }}"
+    timeout: 60
     status_code:
       - 200
       - 201
@@ -128,10 +150,67 @@
         - name: prowlarrUrl
           value: "http://{{ docker_vm_ip }}:9696"
         - name: baseUrl
-          value: "http://{{ docker_gateway_ip }}:7878"
+          value: "http://radarr:7878"
         - name: apiKey
           value: "{{ radarr_api_key }}"
+    timeout: 60
     status_code:
       - 200
       - 201
   when: "'Radarr' not in (prowlarr_apps.content | default(''))"
+
+# --- Indexers ---
+
+- name: Get flaresolverr tag ID
+  ansible.builtin.uri:
+    url: "http://localhost:9696/api/v1/tag"
+    method: GET
+    headers:
+      X-Api-Key: "{{ prowlarr_api_key }}"
+    return_content: true
+  register: prowlarr_tags_current
+
+- name: Set flaresolverr tag ID
+  ansible.builtin.set_fact:
+    flaresolverr_tag_id: "{{ (prowlarr_tags_current.json | selectattr('label', 'equalto', 'flaresolverr') | list | first).id | default(1) }}"
+
+- name: Check existing Prowlarr indexers
+  ansible.builtin.uri:
+    url: "http://localhost:9696/api/v1/indexer"
+    method: GET
+    headers:
+      X-Api-Key: "{{ prowlarr_api_key }}"
+    return_content: true
+  register: prowlarr_indexers_current
+
+- name: Get indexer schemas
+  ansible.builtin.uri:
+    url: "http://localhost:9696/api/v1/indexer/schema"
+    method: GET
+    headers:
+      X-Api-Key: "{{ prowlarr_api_key }}"
+    return_content: true
+  register: prowlarr_schemas
+
+- name: Add indexers to Prowlarr
+  ansible.builtin.uri:
+    url: "http://localhost:9696/api/v1/indexer"
+    method: POST
+    headers:
+      X-Api-Key: "{{ prowlarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body: >
+      {{
+        (prowlarr_schemas.json | selectattr('name', 'equalto', item.name) | list | first)
+        | combine({
+            'enable': true,
+            'tags': (item.flaresolverr | default(false)) | ternary([flaresolverr_tag_id | int], []),
+            'appProfileId': 1
+          })
+      }}
+    status_code:
+      - 200
+      - 201
+  loop: "{{ prowlarr_indexers }}"
+  when: "item.name not in (prowlarr_indexers_current.content | default(''))"

@@ -1,6 +1,6 @@
 ---
 - name: Get initial qBittorrent password from logs
-  ansible.builtin.command: docker logs qbittorrent 2>&1
+  ansible.builtin.shell: docker logs qbittorrent 2>&1
   register: qbt_logs
   changed_when: false
 
@@ -43,7 +43,7 @@
           "save_path": "{{ qbittorrent_default_save_path }}",
           "max_ratio_enabled": true,
           "max_ratio": {{ qbittorrent_seed_ratio_limit }},
-          "max_ratio_act": 1,
+          "max_ratio_act": 0,
           "listen_port": {{ gluetun_port.stdout | default(6881) }}
         }
     status_code: 200

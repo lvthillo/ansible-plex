@@ -39,14 +39,14 @@ docker_vm_memory: 8192
 docker_vm_disk_size: "32G"
 docker_vm_cpu_type: "x86-64-v2-AES"
 docker_vm_user: "media"
-docker_vm_ssh_public_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+docker_vm_ssh_public_key: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
 docker_vm_cloud_image_url: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
 docker_vm_cloud_image_storage: "local-lvm"
 
 # === VPN ===
 vpn_provider: "protonvpn"
 vpn_wireguard_private_key: "{{ vault_vpn_wireguard_private_key }}"
-vpn_server_country: "Netherlands"
+vpn_server_country: "Belgium"
 
 # === Arr Stack ===
 arr_timezone: "Europe/Brussels"
@@ -54,6 +54,10 @@ arr_puid: 1000
 arr_pgid: 1000
 arr_appdata_path: "/docker/appdata"
 arr_compose_path: "/docker"
+
+# === Arr Authentication ===
+arr_auth_username: "{{ vault_arr_auth_username }}"
+arr_auth_password: "{{ vault_arr_auth_password }}"
 
 # === qBittorrent ===
 qbittorrent_default_save_path: "/data/torrents"

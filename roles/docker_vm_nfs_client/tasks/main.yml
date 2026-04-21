@@ -1,4 +1,44 @@
 ---
+- name: Remove cloud-init netplan config
+  ansible.builtin.file:
+    path: /etc/netplan/50-cloud-init.yaml
+    state: absent
+
+- name: Configure static IP and gateway via netplan
+  ansible.builtin.copy:
+    dest: /etc/netplan/90-ansible.yaml
+    content: |
+      network:
+        version: 2
+        ethernets:
+          eth0:
+            dhcp4: false
+            addresses:
+              - {{ docker_vm_ip }}/24
+            routes:
+              - to: default
+                via: {{ network_gateway }}
+            nameservers:
+              addresses:
+      {% for dns in dns_servers %}
+                - {{ dns }}
+      {% endfor %}
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Apply netplan configuration
+  ansible.builtin.command: netplan apply
+  changed_when: true
+
+- name: Verify internet connectivity
+  ansible.builtin.command: ping -c 2 8.8.8.8
+  changed_when: false
+  retries: 5
+  delay: 3
+  register: internet_check
+  until: internet_check.rc == 0
+
 - name: Install NFS client
   ansible.builtin.apt:
     name: nfs-common

@@ -1,4 +1,10 @@
 ---
+- name: Install prerequisites inside LXC
+  ansible.builtin.command: >
+    pct exec {{ plex_lxc_id }} -- bash -c "apt-get update && apt-get install -y curl gnupg"
+  register: prereqs_install
+  changed_when: "'is already the newest version' not in prereqs_install.stdout"
+
 - name: Add Plex GPG key inside LXC
   ansible.builtin.command: >
     pct exec {{ plex_lxc_id }} -- bash -c
@@ -57,17 +63,22 @@
       and re-run with: -e plex_claim_token=claim-xxxx
   when: plex_claim_token | length == 0
 
-- name: Get Plex auth token for library setup
-  ansible.builtin.uri:
-    url: "http://{{ plex_lxc_ip }}:32400/identity"
-    method: GET
-    return_content: true
-  register: plex_identity
+- name: Get Plex auth token from Preferences.xml
+  ansible.builtin.command: >
+    pct exec {{ plex_lxc_id }} -- bash -c
+    "grep -oP 'PlexOnlineToken=\"\K[^\"]+' '/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Preferences.xml'"
+  register: plex_token_result
+  changed_when: false
+  when: plex_claim_token | length > 0
+
+- name: Set Plex auth token fact
+  ansible.builtin.set_fact:
+    plex_auth_token: "{{ plex_token_result.stdout | trim }}"
   when: plex_claim_token | length > 0
 
 - name: Check if Movies library exists
   ansible.builtin.uri:
-    url: "http://{{ plex_lxc_ip }}:32400/library/sections"
+    url: "http://{{ plex_lxc_ip }}:32400/library/sections?X-Plex-Token={{ plex_auth_token }}"
     method: GET
     headers:
       Accept: application/json
@@ -77,7 +88,7 @@
 
 - name: Add Movies library
   ansible.builtin.uri:
-    url: "http://{{ plex_lxc_ip }}:32400/library/sections"
+    url: "http://{{ plex_lxc_ip }}:32400/library/sections?X-Plex-Token={{ plex_auth_token }}"
     method: POST
     body_format: form-urlencoded
     body:
@@ -96,7 +107,7 @@
 
 - name: Add TV library
   ansible.builtin.uri:
-    url: "http://{{ plex_lxc_ip }}:32400/library/sections"
+    url: "http://{{ plex_lxc_ip }}:32400/library/sections?X-Plex-Token={{ plex_auth_token }}"
     method: POST
     body_format: form-urlencoded
     body:

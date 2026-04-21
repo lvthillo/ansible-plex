@@ -9,21 +9,17 @@
   ansible.builtin.include_tasks: idmap.yml
 
 - name: Start Plex LXC container
-  community.general.proxmox:
-    vmid: "{{ plex_lxc_id }}"
-    state: started
-    api_host: "{{ proxmox_host_ip }}"
-    api_user: root@pam
-    api_token_id: "{{ proxmox_api_token_id | default(omit) }}"
-    api_token_secret: "{{ proxmox_api_token_secret | default(omit) }}"
-    api_password: "{{ proxmox_api_password | default(omit) }}"
+  ansible.builtin.command: pct start {{ plex_lxc_id }}
+  register: lxc_start
+  changed_when: lxc_start.rc == 0
+  failed_when: false
 
 - name: Wait for LXC to be ready
-  ansible.builtin.command: pct exec {{ plex_lxc_id }} -- systemctl is-system-running --wait
+  ansible.builtin.command: pct exec {{ plex_lxc_id }} -- systemctl is-system-running
   register: lxc_ready
   retries: 30
   delay: 5
-  until: lxc_ready.rc == 0
+  until: lxc_ready.stdout in ['running', 'degraded']
   changed_when: false
   failed_when: false
 

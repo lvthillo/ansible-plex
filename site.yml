@@ -17,6 +17,9 @@
   hosts: docker_arr
   gather_facts: true
   become: true
+  vars_files:
+    - group_vars/all.yml
+    - group_vars/vault.yml
   roles:
     - docker_vm_nfs_client
     - docker_vm_docker

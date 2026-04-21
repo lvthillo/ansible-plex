@@ -1,124 +1,43 @@
 ---
-- name: Get Bazarr API key
-  ansible.builtin.command: >
-    docker exec bazarr grep -oP 'apikey: \K.+' /config/config/config.yaml
-  register: bazarr_config
-  changed_when: false
-  retries: 10
-  delay: 5
-  until: bazarr_config.rc == 0
+# Bazarr configuration is done manually via the UI.
+# The API and config.yaml manipulation are unreliable for:
+# - Authentication (password hashing)
+# - Language profiles (no POST endpoint, DB inserts fragile)
+# - Provider credentials
+# - Subsync settings
 
-- name: Set Bazarr API key
-  ansible.builtin.set_fact:
-    bazarr_api_key: "{{ bazarr_config.stdout | trim }}"
+- name: Display Bazarr setup instructions
+  ansible.builtin.debug:
+    msg: |
+      Bazarr is running at http://{{ docker_vm_ip }}:6767
 
-- name: Get current Bazarr settings
-  ansible.builtin.uri:
-    url: "http://localhost:6767/api/system/settings"
-    method: GET
-    headers:
-      X-API-KEY: "{{ bazarr_api_key }}"
-    return_content: true
-  register: bazarr_settings
+      Configure manually:
 
-- name: Configure Bazarr - Sonarr connection
-  ansible.builtin.uri:
-    url: "http://localhost:6767/api/system/settings"
-    method: POST
-    headers:
-      X-API-KEY: "{{ bazarr_api_key }}"
-      Content-Type: application/json
-    body_format: json
-    body:
-      settings:
-        sonarr:
-          ip: sonarr
-          port: 8989
-          apikey: "{{ sonarr_api_key }}"
-          use_sonarr: true
-          series_sync: 60
-        radarr:
-          ip: radarr
-          port: 7878
-          apikey: "{{ radarr_api_key }}"
-          use_radarr: true
-          movies_sync: 60
-    status_code:
-      - 200
-      - 204
+      1. Settings -> Sonarr -> Enable
+         - Address: http://sonarr
+         - Port: 8989
+         - API Key: kopier uit Sonarr -> Settings -> General
 
-- name: Configure Bazarr - Language and subsync settings
-  ansible.builtin.uri:
-    url: "http://localhost:6767/api/system/settings"
-    method: POST
-    headers:
-      X-API-KEY: "{{ bazarr_api_key }}"
-      Content-Type: application/json
-    body_format: json
-    body:
-      settings:
-        general:
-          enabled_providers:
-            - opensubtitlescom
-          serie_default_enabled: true
-          serie_default_profile: 1
-          movie_default_enabled: true
-          movie_default_profile: 1
-          minimum_score: 90
-          minimum_score_movie: 70
-          upgrade_subs: true
-          days_to_upgrade_subs: 7
-          use_embedded_subs: true
-          adaptive_searching: true
-        subsync:
-          use_subsync: "{{ bazarr_subsync_enabled }}"
-          use_subsync_threshold: "{{ bazarr_subsync_enabled }}"
-          subsync_threshold: "{{ bazarr_subsync_threshold_series }}"
-          use_subsync_movie_threshold: "{{ bazarr_subsync_enabled }}"
-          subsync_movie_threshold: "{{ bazarr_subsync_threshold_movies }}"
-          gss: true
-          force_audio: true
-        opensubtitlescom:
-          username: "{{ bazarr_opensubtitles_username }}"
-          password: "{{ bazarr_opensubtitles_password }}"
-          use_hash: true
-          include_ai_translated: false
-          include_machine_translated: false
-    status_code:
-      - 200
-      - 204
+      2. Settings -> Radarr -> Enable
+         - Address: http://radarr
+         - Port: 7878
+         - API Key: kopier uit Radarr -> Settings -> General
 
-- name: Check existing Bazarr language profiles
-  ansible.builtin.uri:
-    url: "http://localhost:6767/api/system/languages/profiles"
-    method: GET
-    headers:
-      X-API-KEY: "{{ bazarr_api_key }}"
-    return_content: true
-  register: bazarr_profiles
+      3. Settings -> Languages
+         - Add New Profile -> Name: Dutch
+         - Add Dutch (primary) + English (fallback)
+         - Default Settings for Series: Dutch
+         - Default Settings for Movies: Dutch
 
-- name: Create Dutch language profile
-  ansible.builtin.uri:
-    url: "http://localhost:6767/api/system/languages/profiles"
-    method: POST
-    headers:
-      X-API-KEY: "{{ bazarr_api_key }}"
-      Content-Type: application/json
-    body_format: json
-    body:
-      name: Dutch
-      items:
-        - id: 1
-          language: nl
-          audio_exclude: "False"
-          hi: "False"
-          forced: "False"
-        - id: 2
-          language: en
-          audio_exclude: "False"
-          hi: "False"
-          forced: "False"
-    status_code:
-      - 200
-      - 201
-  when: "'Dutch' not in (bazarr_profiles.content | default(''))"
+      4. Settings -> Providers -> + -> OpenSubtitles.com
+         - Username: jouw OpenSubtitles username
+         - Password: jouw OpenSubtitles password
+         - Test -> Save
+
+      5. Settings -> Subtitles -> Subtitle Auto-Synchronization
+         - Enable: aan
+         - Always use Audio Track as Reference: aan
+
+      6. Settings -> General -> Security (optioneel)
+         - Authentication: Forms
+         - Username/Password instellen
