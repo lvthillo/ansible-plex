@@ -1,2 +1,49 @@
 ---
-# Placeholder - will be implemented in Task 10
+- name: Get initial qBittorrent password from logs
+  ansible.builtin.command: docker logs qbittorrent 2>&1
+  register: qbt_logs
+  changed_when: false
+
+- name: Extract temporary password
+  ansible.builtin.set_fact:
+    qbt_temp_password: "{{ qbt_logs.stdout | regex_search('temporary password is provided for this session: (.+)', '\\1') | first }}"
+  when: "'temporary password' in qbt_logs.stdout"
+
+- name: Login to qBittorrent API
+  ansible.builtin.uri:
+    url: "http://localhost:8080/api/v2/auth/login"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      username: admin
+      password: "{{ qbt_temp_password | default('adminadmin') }}"
+    status_code: 200
+  register: qbt_login
+
+- name: Extract qBittorrent session cookie
+  ansible.builtin.set_fact:
+    qbt_cookie: "{{ qbt_login.cookies_string }}"
+
+- name: Get Gluetun forwarded port
+  ansible.builtin.command: docker exec gluetun cat /tmp/gluetun/forwarded_port
+  register: gluetun_port
+  changed_when: false
+  failed_when: false
+
+- name: Configure qBittorrent preferences
+  ansible.builtin.uri:
+    url: "http://localhost:8080/api/v2/app/setPreferences"
+    method: POST
+    headers:
+      Cookie: "{{ qbt_cookie }}"
+    body_format: form-urlencoded
+    body:
+      json: >
+        {
+          "save_path": "{{ qbittorrent_default_save_path }}",
+          "max_ratio_enabled": true,
+          "max_ratio": {{ qbittorrent_seed_ratio_limit }},
+          "max_ratio_act": 1,
+          "listen_port": {{ gluetun_port.stdout | default(6881) }}
+        }
+    status_code: 200
