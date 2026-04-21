@@ -1,0 +1,85 @@
+# === Netwerk ===
+proxmox_host_ip: "192.168.0.200"
+network_subnet: "192.168.0.0/24"
+network_gateway: "192.168.0.1"
+dns_servers:
+  - "8.8.8.8"
+  - "1.1.1.1"
+
+# === Storage ===
+lvm_vg: "pve"
+lvm_pool: "data"
+lvm_volume_name: "media"
+lvm_volume_size: "250g"
+media_mount_path: "/mnt/data"
+
+# === Plex LXC ===
+plex_lxc_id: 101
+plex_lxc_hostname: "plex"
+plex_lxc_ip: "192.168.0.101"
+plex_lxc_cores: 2
+plex_lxc_memory: 2048
+plex_lxc_swap: 512
+plex_lxc_disk: 8
+plex_lxc_storage: "local-lvm"
+plex_lxc_features: "nesting=1,keyctl=1"
+plex_lxc_tags: "ansible;media"
+plex_lxc_igpu_render_gid: 993
+plex_lxc_igpu_card_gid: 44
+plex_lxc_template: "ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
+plex_lxc_template_storage: "local"
+plex_claim_token: ""
+
+# === Docker VM ===
+docker_vm_id: 102
+docker_vm_name: "docker-arr"
+docker_vm_ip: "192.168.0.193"
+docker_vm_cores: 4
+docker_vm_memory: 8192
+docker_vm_disk_size: "32G"
+docker_vm_cpu_type: "x86-64-v2-AES"
+docker_vm_user: "media"
+docker_vm_ssh_public_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+docker_vm_cloud_image_url: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+docker_vm_cloud_image_storage: "local-lvm"
+
+# === VPN ===
+vpn_provider: "protonvpn"
+vpn_wireguard_private_key: "{{ vault_vpn_wireguard_private_key }}"
+vpn_server_country: "Netherlands"
+
+# === Arr Stack ===
+arr_timezone: "Europe/Brussels"
+arr_puid: 1000
+arr_pgid: 1000
+arr_appdata_path: "/docker/appdata"
+arr_compose_path: "/docker"
+
+# === qBittorrent ===
+qbittorrent_default_save_path: "/data/torrents"
+qbittorrent_seed_ratio_limit: 1.0
+qbittorrent_seed_action: "remove_torrent_and_files"
+
+# === Prowlarr indexers ===
+prowlarr_indexers:
+  - name: "1337x"
+    flaresolverr: true
+  - name: "EZTV"
+    flaresolverr: true
+  - name: "The Pirate Bay"
+    flaresolverr: true
+
+# === Bazarr ===
+bazarr_languages:
+  - "Dutch"
+  - "English"
+bazarr_default_profile: "Dutch"
+bazarr_subsync_enabled: true
+bazarr_subsync_threshold_series: 90
+bazarr_subsync_threshold_movies: 70
+bazarr_opensubtitles_username: "{{ vault_bazarr_opensubtitles_username }}"
+bazarr_opensubtitles_password: "{{ vault_bazarr_opensubtitles_password }}"
+
+# === Cleanup ===
+ansible_confirm_cleanup: false
+haos_vm_id: 100

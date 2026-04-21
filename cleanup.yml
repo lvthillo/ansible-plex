@@ -1,0 +1,11 @@
+---
+# Ansible Media Server - Cleanup
+# DESTRUCTIEF: verwijdert Plex LXC, Docker VM, NFS, LVM volume
+# Usage: ansible-playbook cleanup.yml -e ansible_confirm_cleanup=true
+
+- name: Cleanup media server
+  hosts: proxmox
+  gather_facts: false
+  roles:
+    - role: proxmox_cleanup
+      when: ansible_confirm_cleanup | default(false) | bool

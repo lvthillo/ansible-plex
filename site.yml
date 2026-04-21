@@ -1,0 +1,23 @@
+---
+# Ansible Media Server - Full Setup
+# Usage: ansible-playbook site.yml -e plex_claim_token=claim-xxx --ask-vault-pass
+
+# Fase 1: Proxmox host configuratie
+- name: Configure Proxmox host
+  hosts: proxmox
+  gather_facts: true
+  roles:
+    - proxmox_storage
+    - proxmox_nfs_server
+    - plex_lxc
+    - docker_vm
+
+# Fase 2: Docker VM configuratie
+- name: Configure Docker VM
+  hosts: docker_arr
+  gather_facts: true
+  become: true
+  roles:
+    - docker_vm_nfs_client
+    - docker_vm_docker
+    - arr_stack
