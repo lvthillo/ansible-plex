@@ -1,0 +1,71 @@
+---
+- name: Safety check - refuse to delete HAOS VM
+  ansible.builtin.fail:
+    msg: "WEIGERING: VM ID {{ haos_vm_id }} (Home Assistant) mag niet verwijderd worden"
+  when: plex_lxc_id == haos_vm_id or docker_vm_id == haos_vm_id
+
+- name: Stop Plex LXC
+  ansible.builtin.command: pct stop {{ plex_lxc_id }}
+  register: lxc_stop
+  changed_when: lxc_stop.rc == 0
+  failed_when: false
+
+- name: Destroy Plex LXC
+  ansible.builtin.command: pct destroy {{ plex_lxc_id }} --purge
+  register: lxc_destroy
+  changed_when: lxc_destroy.rc == 0
+  failed_when: false
+
+- name: Stop Docker VM
+  ansible.builtin.command: qm stop {{ docker_vm_id }}
+  register: vm_stop
+  changed_when: vm_stop.rc == 0
+  failed_when: false
+
+- name: Destroy Docker VM
+  ansible.builtin.command: qm destroy {{ docker_vm_id }} --purge
+  register: vm_destroy
+  changed_when: vm_destroy.rc == 0
+  failed_when: false
+
+- name: Remove NFS export
+  ansible.builtin.lineinfile:
+    path: /etc/exports
+    regexp: "^{{ media_mount_path }}"
+    state: absent
+  notify: Re-export NFS shares
+
+- name: Re-export NFS shares
+  ansible.builtin.command: exportfs -ra
+  changed_when: true
+
+- name: Unmount media volume
+  ansible.posix.mount:
+    path: "{{ media_mount_path }}"
+    state: absent
+
+- name: Remove LVM thin volume
+  community.general.lvol:
+    vg: "{{ lvm_vg }}"
+    lv: "{{ lvm_volume_name }}"
+    state: absent
+    force: true
+
+- name: Remove UID mapping from subuid
+  ansible.builtin.lineinfile:
+    path: /etc/subuid
+    line: "root:1000:1"
+    state: absent
+
+- name: Remove GID mapping from subgid
+  ansible.builtin.lineinfile:
+    path: /etc/subgid
+    line: "root:1000:1"
+    state: absent
+
+- name: Cleanup complete
+  ansible.builtin.debug:
+    msg: >
+      Cleanup voltooid. Verwijderd: LXC {{ plex_lxc_id }}, VM {{ docker_vm_id }},
+      NFS export, LVM volume {{ lvm_volume_name }}.
+      VM {{ haos_vm_id }} (HAOS) is NIET aangeraakt.
