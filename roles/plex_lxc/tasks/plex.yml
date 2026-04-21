@@ -1,2 +1,114 @@
 ---
-# Implemented in Task 5
+- name: Add Plex GPG key inside LXC
+  ansible.builtin.command: >
+    pct exec {{ plex_lxc_id }} -- bash -c
+    "curl -fsSL https://downloads.plex.tv/plex-keys/PlexSign.key |
+    gpg --batch --yes --dearmor -o /usr/share/keyrings/plex-archive-keyring.gpg"
+  args:
+    creates: ""
+  register: plex_gpg
+  changed_when: plex_gpg.rc == 0
+
+- name: Check if Plex GPG key exists
+  ansible.builtin.command: >
+    pct exec {{ plex_lxc_id }} -- test -f /usr/share/keyrings/plex-archive-keyring.gpg
+  register: plex_gpg_check
+  changed_when: false
+  failed_when: false
+
+- name: Add Plex apt repository inside LXC
+  ansible.builtin.command: >
+    pct exec {{ plex_lxc_id }} -- bash -c
+    "echo 'deb [signed-by=/usr/share/keyrings/plex-archive-keyring.gpg] https://downloads.plex.tv/repo/deb public main'
+    > /etc/apt/sources.list.d/plexmediaserver.list"
+  when: plex_gpg_check.rc == 0
+  changed_when: true
+
+- name: Install Plex Media Server inside LXC
+  ansible.builtin.command: >
+    pct exec {{ plex_lxc_id }} -- bash -c "apt-get update && apt-get install -y plexmediaserver"
+  register: plex_install
+  changed_when: "'is already the newest version' not in plex_install.stdout"
+
+- name: Wait for Plex to be available
+  ansible.builtin.uri:
+    url: "http://{{ plex_lxc_ip }}:32400/identity"
+    method: GET
+    status_code: 200
+  register: plex_available
+  retries: 30
+  delay: 5
+  until: plex_available.status == 200
+
+- name: Claim Plex server (requires claim token)
+  ansible.builtin.uri:
+    url: "http://{{ plex_lxc_ip }}:32400/myplex/claim?token={{ plex_claim_token }}"
+    method: POST
+    status_code:
+      - 200
+      - 201
+  when: plex_claim_token | length > 0
+
+- name: Display Plex claim instructions
+  ansible.builtin.debug:
+    msg: >
+      Plex is running at http://{{ plex_lxc_ip }}:32400/web
+      To claim this server, go to https://plex.tv/claim, copy the token,
+      and re-run with: -e plex_claim_token=claim-xxxx
+  when: plex_claim_token | length == 0
+
+- name: Get Plex auth token for library setup
+  ansible.builtin.uri:
+    url: "http://{{ plex_lxc_ip }}:32400/identity"
+    method: GET
+    return_content: true
+  register: plex_identity
+  when: plex_claim_token | length > 0
+
+- name: Check if Movies library exists
+  ansible.builtin.uri:
+    url: "http://{{ plex_lxc_ip }}:32400/library/sections"
+    method: GET
+    headers:
+      Accept: application/json
+    return_content: true
+  register: plex_libraries
+  when: plex_claim_token | length > 0
+
+- name: Add Movies library
+  ansible.builtin.uri:
+    url: "http://{{ plex_lxc_ip }}:32400/library/sections"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      name: Films
+      type: movie
+      agent: tv.plex.agents.movie
+      scanner: "Plex Movie"
+      language: nl
+      "location[0]": /data/media/movies
+    status_code:
+      - 200
+      - 201
+  when:
+    - plex_claim_token | length > 0
+    - "'movies' not in (plex_libraries.content | default(''))"
+
+- name: Add TV library
+  ansible.builtin.uri:
+    url: "http://{{ plex_lxc_ip }}:32400/library/sections"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      name: TV-series
+      type: show
+      agent: tv.plex.agents.series
+      scanner: "Plex TV Series"
+      language: nl
+      "location[0]": /data/media/tv
+    status_code:
+      - 200
+      - 201
+  when:
+    - plex_claim_token | length > 0
+    - "'tv' not in (plex_libraries.content | default(''))"
