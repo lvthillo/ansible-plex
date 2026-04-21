@@ -1,0 +1,100 @@
+---
+- name: Write SSH public key to temp file
+  ansible.builtin.copy:
+    content: "{{ docker_vm_ssh_public_key }}"
+    dest: /tmp/docker_vm_sshkey.pub
+    mode: "0644"
+
+- name: Download Ubuntu cloud-init image
+  ansible.builtin.get_url:
+    url: "{{ docker_vm_cloud_image_url }}"
+    dest: "/tmp/ubuntu-cloud.img"
+    mode: "0644"
+
+- name: Check if VM already exists
+  ansible.builtin.command: qm status {{ docker_vm_id }}
+  register: vm_status
+  changed_when: false
+  failed_when: false
+
+- name: Create Docker VM
+  when: vm_status.rc != 0
+  block:
+    - name: Create VM shell
+      ansible.builtin.command: >
+        qm create {{ docker_vm_id }}
+        --name {{ docker_vm_name }}
+        --cores {{ docker_vm_cores }}
+        --memory {{ docker_vm_memory }}
+        --cpu {{ docker_vm_cpu_type }}
+        --net0 virtio,bridge=vmbr0,firewall=1
+        --scsihw virtio-scsi-single
+        --agent 1
+        --onboot 1
+        --ostype l26
+      changed_when: true
+
+    - name: Import cloud-init disk
+      ansible.builtin.command: >
+        qm importdisk {{ docker_vm_id }} /tmp/ubuntu-cloud.img {{ docker_vm_cloud_image_storage }}
+      changed_when: true
+
+    - name: Attach imported disk as scsi0
+      ansible.builtin.command: >
+        qm set {{ docker_vm_id }}
+        --scsi0 {{ docker_vm_cloud_image_storage }}:vm-{{ docker_vm_id }}-disk-0,iothread=1,size={{ docker_vm_disk_size }}
+      changed_when: true
+
+    - name: Add cloud-init drive
+      ansible.builtin.command: >
+        qm set {{ docker_vm_id }}
+        --ide2 {{ docker_vm_cloud_image_storage }}:cloudinit
+      changed_when: true
+
+    - name: Configure boot order
+      ansible.builtin.command: >
+        qm set {{ docker_vm_id }} --boot order=scsi0
+      changed_when: true
+
+    - name: Configure cloud-init settings
+      ansible.builtin.command: >
+        qm set {{ docker_vm_id }}
+        --ciuser {{ docker_vm_user }}
+        --sshkeys /tmp/docker_vm_sshkey.pub
+        --ipconfig0 ip={{ docker_vm_ip }}/24,gw={{ network_gateway }}
+        --nameserver {{ dns_servers | join(',') }}
+      changed_when: true
+
+    - name: Resize disk to target size
+      ansible.builtin.command: >
+        qm disk resize {{ docker_vm_id }} scsi0 {{ docker_vm_disk_size }}
+      changed_when: true
+      failed_when: false
+
+- name: Start Docker VM
+  ansible.builtin.command: qm start {{ docker_vm_id }}
+  register: vm_start
+  changed_when: vm_start.rc == 0
+  failed_when: false
+
+- name: Wait for VM SSH to be available
+  ansible.builtin.wait_for:
+    host: "{{ docker_vm_ip }}"
+    port: 22
+    timeout: 300
+    delay: 10
+
+- name: Add Docker VM to in-memory inventory
+  ansible.builtin.add_host:
+    name: docker_arr
+    ansible_host: "{{ docker_vm_ip }}"
+    ansible_user: "{{ docker_vm_user }}"
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
+
+- name: Clean up temp files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/ubuntu-cloud.img
+    - /tmp/docker_vm_sshkey.pub
