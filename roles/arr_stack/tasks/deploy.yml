@@ -1,0 +1,64 @@
+---
+- name: Create appdata directories
+  ansible.builtin.file:
+    path: "{{ arr_appdata_path }}/{{ item }}"
+    state: directory
+    owner: "{{ arr_puid }}"
+    group: "{{ arr_pgid }}"
+    mode: "0755"
+  loop:
+    - sonarr
+    - radarr
+    - bazarr
+    - prowlarr
+    - flaresolverr
+    - qbittorrent
+
+- name: Create Docker Compose directory
+  ansible.builtin.file:
+    path: "{{ arr_compose_path }}"
+    state: directory
+    owner: "{{ arr_puid }}"
+    group: "{{ arr_pgid }}"
+    mode: "0755"
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ arr_compose_path }}/docker-compose.yml"
+    owner: "{{ arr_puid }}"
+    group: "{{ arr_pgid }}"
+    mode: "0600"
+
+- name: Start arr stack with Docker Compose
+  community.docker.docker_compose_v2:
+    project_src: "{{ arr_compose_path }}"
+    state: present
+    pull: always
+
+- name: Wait for Gluetun to be healthy
+  ansible.builtin.command: docker inspect --format={{ '{{' }}.State.Health.Status{{ '}}' }} gluetun
+  register: gluetun_health
+  retries: 30
+  delay: 10
+  until: gluetun_health.stdout == "healthy"
+  changed_when: false
+
+- name: Wait for all services to be reachable
+  ansible.builtin.uri:
+    url: "http://localhost:{{ item.port }}"
+    method: GET
+    status_code:
+      - 200
+      - 302
+      - 401
+  loop:
+    - { name: qbittorrent, port: 8080 }
+    - { name: sonarr, port: 8989 }
+    - { name: radarr, port: 7878 }
+    - { name: prowlarr, port: 9696 }
+    - { name: bazarr, port: 6767 }
+  retries: 30
+  delay: 10
+  register: service_check
+  until: service_check.status in [200, 302, 401]

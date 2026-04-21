@@ -1,0 +1,115 @@
+# Managed by Ansible
+services:
+  gluetun:
+    image: qmcgaw/gluetun
+    container_name: gluetun
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - DNS_ADDRESS=8.8.8.8
+      - VPN_SERVICE_PROVIDER={{ vpn_provider }}
+      - VPN_TYPE=wireguard
+      - WIREGUARD_PRIVATE_KEY={{ vpn_wireguard_private_key }}
+      - SERVER_COUNTRIES={{ vpn_server_country }}
+      - VPN_PORT_FORWARDING=on
+      - PORT_FORWARD_ONLY=on
+    ports:
+      - 8080:8080
+      - 6881:6881
+      - 6881:6881/udp
+      - 9696:9696
+      - 8191:8191
+    healthcheck:
+      test: wget -qO- https://api.ipify.org || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    network_mode: service:gluetun
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      - PUID={{ arr_puid }}
+      - PGID={{ arr_pgid }}
+      - TZ={{ arr_timezone }}
+      - WEBUI_PORT=8080
+    volumes:
+      - {{ arr_appdata_path }}/qbittorrent:/config
+      - /data/torrents:/data/torrents
+    restart: unless-stopped
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    network_mode: service:gluetun
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      - PUID={{ arr_puid }}
+      - PGID={{ arr_pgid }}
+      - TZ={{ arr_timezone }}
+    volumes:
+      - {{ arr_appdata_path }}/prowlarr:/config
+    restart: unless-stopped
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    network_mode: service:gluetun
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      - TZ={{ arr_timezone }}
+    mem_limit: 2g
+    restart: unless-stopped
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID={{ arr_puid }}
+      - PGID={{ arr_pgid }}
+      - TZ={{ arr_timezone }}
+    volumes:
+      - {{ arr_appdata_path }}/sonarr:/config
+      - /data:/data
+    ports:
+      - 8989:8989
+    restart: unless-stopped
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID={{ arr_puid }}
+      - PGID={{ arr_pgid }}
+      - TZ={{ arr_timezone }}
+    volumes:
+      - {{ arr_appdata_path }}/radarr:/config
+      - /data:/data
+    ports:
+      - 7878:7878
+    restart: unless-stopped
+
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: bazarr
+    environment:
+      - PUID={{ arr_puid }}
+      - PGID={{ arr_pgid }}
+      - TZ={{ arr_timezone }}
+    volumes:
+      - {{ arr_appdata_path }}/bazarr:/config
+      - /data/media:/data/media
+    ports:
+      - 6767:6767
+    restart: unless-stopped
