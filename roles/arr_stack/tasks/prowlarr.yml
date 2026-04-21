@@ -1,2 +1,137 @@
 ---
-# Placeholder - will be implemented in Task 12
+- name: Get Prowlarr API key
+  ansible.builtin.command: >
+    docker exec prowlarr cat /config/config.xml
+  register: prowlarr_config_xml
+  changed_when: false
+
+- name: Extract Prowlarr API key
+  ansible.builtin.set_fact:
+    prowlarr_api_key: "{{ prowlarr_config_xml.stdout | regex_search('<ApiKey>(.+?)</ApiKey>', '\\1') | first }}"
+
+- name: Get Docker gateway IP
+  ansible.builtin.command: >
+    docker network inspect bridge --format={{ '{{' }}range .IPAM.Config{{ '}}' }}{{ '{{' }}.Gateway{{ '}}' }}{{ '{{' }}end{{ '}}' }}
+  register: docker_gateway
+  changed_when: false
+
+- name: Set Docker gateway fact
+  ansible.builtin.set_fact:
+    docker_gateway_ip: "{{ docker_gateway.stdout }}"
+
+- name: Check existing Prowlarr indexer proxies
+  ansible.builtin.uri:
+    url: "http://localhost:9696/api/v1/indexerProxy"
+    method: GET
+    headers:
+      X-Api-Key: "{{ prowlarr_api_key }}"
+    return_content: true
+  register: prowlarr_proxies
+
+- name: Add FlareSolverr proxy to Prowlarr
+  ansible.builtin.uri:
+    url: "http://localhost:9696/api/v1/indexerProxy"
+    method: POST
+    headers:
+      X-Api-Key: "{{ prowlarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      name: FlareSolverr
+      implementation: FlareSolverr
+      configContract: FlareSolverrSettings
+      tags:
+        - 1
+      fields:
+        - name: host
+          value: "http://localhost:8191"
+        - name: requestTimeout
+          value: 60
+    status_code:
+      - 200
+      - 201
+  when: "'FlareSolverr' not in (prowlarr_proxies.content | default(''))"
+
+- name: Check existing Prowlarr tags
+  ansible.builtin.uri:
+    url: "http://localhost:9696/api/v1/tag"
+    method: GET
+    headers:
+      X-Api-Key: "{{ prowlarr_api_key }}"
+    return_content: true
+  register: prowlarr_tags
+
+- name: Create flaresolverr tag
+  ansible.builtin.uri:
+    url: "http://localhost:9696/api/v1/tag"
+    method: POST
+    headers:
+      X-Api-Key: "{{ prowlarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      label: flaresolverr
+    status_code:
+      - 200
+      - 201
+  register: flaresolverr_tag
+  when: "'flaresolverr' not in (prowlarr_tags.content | default(''))"
+
+- name: Check existing Prowlarr applications
+  ansible.builtin.uri:
+    url: "http://localhost:9696/api/v1/applications"
+    method: GET
+    headers:
+      X-Api-Key: "{{ prowlarr_api_key }}"
+    return_content: true
+  register: prowlarr_apps
+
+- name: Add Sonarr to Prowlarr
+  ansible.builtin.uri:
+    url: "http://localhost:9696/api/v1/applications"
+    method: POST
+    headers:
+      X-Api-Key: "{{ prowlarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      name: Sonarr
+      syncLevel: fullSync
+      implementation: Sonarr
+      configContract: SonarrSettings
+      fields:
+        - name: prowlarrUrl
+          value: "http://{{ docker_vm_ip }}:9696"
+        - name: baseUrl
+          value: "http://{{ docker_gateway_ip }}:8989"
+        - name: apiKey
+          value: "{{ sonarr_api_key }}"
+    status_code:
+      - 200
+      - 201
+  when: "'Sonarr' not in (prowlarr_apps.content | default(''))"
+
+- name: Add Radarr to Prowlarr
+  ansible.builtin.uri:
+    url: "http://localhost:9696/api/v1/applications"
+    method: POST
+    headers:
+      X-Api-Key: "{{ prowlarr_api_key }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      name: Radarr
+      syncLevel: fullSync
+      implementation: Radarr
+      configContract: RadarrSettings
+      fields:
+        - name: prowlarrUrl
+          value: "http://{{ docker_vm_ip }}:9696"
+        - name: baseUrl
+          value: "http://{{ docker_gateway_ip }}:7878"
+        - name: apiKey
+          value: "{{ radarr_api_key }}"
+    status_code:
+      - 200
+      - 201
+  when: "'Radarr' not in (prowlarr_apps.content | default(''))"
